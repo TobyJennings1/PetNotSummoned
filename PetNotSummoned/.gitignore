@@ -1,0 +1,13 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Zip builds
+*.zip
+
+# WoW saved variables (if ever copied)
+SavedVariables/

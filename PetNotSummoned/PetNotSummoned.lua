@@ -78,10 +78,15 @@ local function CheckPet()
     return
   end
 
+  -- 🚫 Do not warn while mounted or on taxi
+  if IsMounted() or UnitOnTaxi("player") then
+    ShowIcon(false)
+    return
+  end
+
   local hasPet = UnitExists("pet")
   ShowIcon(not hasPet)
 
-  -- Don't spam while fighting; warn after combat ends instead.
   if InCombatLockdown() then return end
 
   if not hasPet and not warned then
@@ -91,6 +96,7 @@ local function CheckPet()
     warned = false
   end
 end
+
 
 f:SetScript("OnEvent", function(_, event, ...)
   -- UNIT_PET fires for many units; only care about the player.

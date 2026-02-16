@@ -6,6 +6,8 @@ local ICON_SIZE = 80
 local ICON_POINT, ICON_REL, ICON_X, ICON_Y = "CENTER", UIParent, 0, 60  -- move up a bit
 
 local warned = false
+local dismountTimer = nil
+
 
 local RAISE_DEAD_SPELL_ID = 46585
 
@@ -73,14 +75,30 @@ local function RaidWarn()
 end
 
 local function CheckPet()
-  if not IsRelevantSpec() then
+  -- 🚫 Always hide while mounted or taxi
+  if IsMounted() or UnitOnTaxi("player") then
     ShowIcon(false)
+    warned = false
     return
   end
 
-  -- 🚫 Do not warn while mounted or on taxi
-  if IsMounted() or UnitOnTaxi("player") then
+  -- 🚫 Hide if dead
+  if UnitIsDeadOrGhost("player") then
     ShowIcon(false)
+    warned = false
+    return
+  end
+
+  if not IsRelevantSpec() then
+    ShowIcon(false)
+    warned = false
+    return
+  end
+
+  -- 🚫 Warlock Sacrifice override
+  if WarlockShouldIgnoreNoPet() then
+    ShowIcon(false)
+    warned = false
     return
   end
 
@@ -98,6 +116,7 @@ local function CheckPet()
 end
 
 
+
 f:SetScript("OnEvent", function(_, event, ...)
   -- UNIT_PET fires for many units; only care about the player.
   if event == "UNIT_PET" then
@@ -108,6 +127,7 @@ f:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- Events
+f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("UNIT_PET")

@@ -1,16 +1,24 @@
 local addonName = ...
 local f = CreateFrame("Frame")
 
--- settings
+-- =========================
+-- Settings
+-- =========================
 local ICON_SIZE = 80
-local ICON_POINT, ICON_REL, ICON_X, ICON_Y = "CENTER", UIParent, 0, 60  -- move up a bit
+local ICON_POINT, ICON_REL, ICON_X, ICON_Y = "CENTER", UIParent, 0, 60
+
+local RAISE_DEAD_SPELL_ID = 46585
+local GRIMOIRE_OF_SACRIFICE_ID = 108503
 
 local warned = false
 local dismountTimer = nil
 
+-- Forward declare so references are safe even if you rearrange code later
+local WarlockShouldIgnoreNoPet
 
-local RAISE_DEAD_SPELL_ID = 46585
-
+-- =========================
+-- Helpers
+-- =========================
 local function IsRelevantSpec()
   local _, class = UnitClass("player")
 
@@ -32,34 +40,51 @@ local function IsRelevantSpec()
   return false
 end
 
+local function PlayerHasAuraBySpellID(spellID)
+  if AuraUtil and AuraUtil.FindAuraBySpellID then
+    return AuraUtil.FindAuraBySpellID(spellID, "player") ~= nil
+  end
 
--- === Persistent icon frame ===
+  for i = 1, 40 do
+    local _, _, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff("player", i)
+    if not auraSpellID then break end
+    if auraSpellID == spellID then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- Define the previously-forward-declared function
+WarlockShouldIgnoreNoPet = function()
+  local _, class = UnitClass("player")
+  if class ~= "WARLOCK" then return false end
+  return PlayerHasAuraBySpellID(GRIMOIRE_OF_SACRIFICE_ID)
+end
+
+-- =========================
+-- Persistent Icon
+-- =========================
 local iconFrame = CreateFrame("Frame", "PetNotSummonedIconFrame", UIParent, "BackdropTemplate")
 iconFrame:SetSize(ICON_SIZE, ICON_SIZE)
 iconFrame:SetPoint(ICON_POINT, ICON_REL, ICON_X, ICON_Y)
 iconFrame:Hide()
+iconFrame:EnableMouse(false)
 
 local tex = iconFrame:CreateTexture(nil, "ARTWORK")
 tex:SetAllPoints(true)
+tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall") -- change if you want
 
--- Default icon: "pet" themed. You can swap this texture if you prefer.
--- Using a built-in icon file path is safest.
-tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall")
-
--- Optional: background/border for visibility
 local bg = iconFrame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints(true)
 bg:SetColorTexture(0, 0, 0, 0.35)
 
--- Simple red glow-ish border using a backdrop (works in modern WoW)
 iconFrame:SetBackdrop({
   edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
   edgeSize = 12,
 })
 iconFrame:SetBackdropBorderColor(1, 0.1, 0.1, 1)
-
--- Make it click-through (so it doesn't block UI)
-iconFrame:EnableMouse(false)
 
 local function ShowIcon(show)
   if show then iconFrame:Show() else iconFrame:Hide() end
@@ -74,29 +99,33 @@ local function RaidWarn()
   PlaySound(SOUNDKIT.RAID_WARNING, "Master")
 end
 
+-- =========================
+-- Core Check
+-- =========================
 local function CheckPet()
-  -- 🚫 Always hide while mounted or taxi
+  -- 🚫 Always hide while mounted or on taxi
   if IsMounted() or UnitOnTaxi("player") then
     ShowIcon(false)
     warned = false
     return
   end
 
-  -- 🚫 Hide if dead
+  -- 🚫 Hide if dead/ghost
   if UnitIsDeadOrGhost("player") then
     ShowIcon(false)
     warned = false
     return
   end
 
+  -- Only care for supported classes/specs
   if not IsRelevantSpec() then
     ShowIcon(false)
     warned = false
     return
   end
 
-  -- 🚫 Warlock Sacrifice override
-  if WarlockShouldIgnoreNoPet() then
+  -- 🚫 Warlock: Grimoire of Sacrifice active means no pet is intentional
+  if WarlockShouldIgnoreNoPet and WarlockShouldIgnoreNoPet() then
     ShowIcon(false)
     warned = false
     return
@@ -105,6 +134,7 @@ local function CheckPet()
   local hasPet = UnitExists("pet")
   ShowIcon(not hasPet)
 
+  -- Avoid raid warning spam while fighting; warn after combat ends instead
   if InCombatLockdown() then return end
 
   if not hasPet and not warned then
@@ -115,20 +145,43 @@ local function CheckPet()
   end
 end
 
-
-
+-- =========================
+-- Events
+-- =========================
 f:SetScript("OnEvent", function(_, event, ...)
-  -- UNIT_PET fires for many units; only care about the player.
   if event == "UNIT_PET" then
     local unit = ...
     if unit ~= "player" then return end
+    CheckPet()
+    return
   end
+
+  if event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+    if IsMounted() then
+      if dismountTimer then
+        dismountTimer:Cancel()
+        dismountTimer = nil
+      end
+      ShowIcon(false)
+      warned = false
+      return
+    else
+      if dismountTimer then
+        dismountTimer:Cancel()
+      end
+      dismountTimer = C_Timer.NewTimer(2, function()
+        CheckPet()
+      end)
+      return
+    end
+  end
+
   CheckPet()
 end)
 
--- Events
-f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("UNIT_PET")
-f:RegisterEvent("PLAYER_REGEN_ENABLED") -- leaving combat, good time to warn
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
+f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")

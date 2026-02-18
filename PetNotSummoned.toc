@@ -1,7 +1,7 @@
 ## Interface: 120000, 120001
 ## Title: Pet Not Summoned
 ## Notes: Warns you when you have no active pet.
-## Version: 1.1.2
+## Version: 1.1.3
 ## Author: Furohashi
 ## X-Curse-Project-ID: 1461280
 PetNotSummoned.lua

@@ -12,8 +12,9 @@ local GRIMOIRE_OF_SACRIFICE_ID = 108503
 
 local warned = false
 local dismountTimer = nil
+local rezTimer = nil
 
--- Forward declare so references are safe even if you rearrange code later
+-- Forward declare
 local WarlockShouldIgnoreNoPet
 
 -- =========================
@@ -56,10 +57,10 @@ local function PlayerHasAuraBySpellID(spellID)
   return false
 end
 
--- Define the previously-forward-declared function
 WarlockShouldIgnoreNoPet = function()
   local _, class = UnitClass("player")
   if class ~= "WARLOCK" then return false end
+  -- Only ignore when Sacrifice BUFF is active
   return PlayerHasAuraBySpellID(GRIMOIRE_OF_SACRIFICE_ID)
 end
 
@@ -74,7 +75,7 @@ iconFrame:EnableMouse(false)
 
 local tex = iconFrame:CreateTexture(nil, "ARTWORK")
 tex:SetAllPoints(true)
-tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall") -- change if you want
+tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall") -- swap if desired
 
 local bg = iconFrame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints(true)
@@ -117,7 +118,6 @@ local function CheckPet()
     return
   end
 
-  -- Only care for supported classes/specs
   if not IsRelevantSpec() then
     ShowIcon(false)
     warned = false
@@ -145,6 +145,17 @@ local function CheckPet()
   end
 end
 
+local function ScheduleRezCheck()
+  -- Give the game a moment after rez to restore pet state / fire UNIT_PET
+  if rezTimer then
+    rezTimer:Cancel()
+    rezTimer = nil
+  end
+  rezTimer = C_Timer.NewTimer(1.0, function()
+    CheckPet()
+  end)
+end
+
 -- =========================
 -- Events
 -- =========================
@@ -169,13 +180,28 @@ f:SetScript("OnEvent", function(_, event, ...)
       if dismountTimer then
         dismountTimer:Cancel()
       end
-      dismountTimer = C_Timer.NewTimer(2, function()
+      dismountTimer = C_Timer.NewTimer(2.0, function()
         CheckPet()
       end)
       return
     end
   end
 
+  if event == "PLAYER_DEAD" then
+    -- Reset state; we'll re-check on ALIVE/UNGHOST
+    warned = false
+    ShowIcon(false)
+    return
+  end
+
+  if event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+    warned = false
+    ShowIcon(false)
+    ScheduleRezCheck()
+    return
+  end
+
+  -- Default: just check
   CheckPet()
 end)
 
@@ -185,3 +211,8 @@ f:RegisterEvent("UNIT_PET")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+
+-- Death/rez events (fix for your issue)
+f:RegisterEvent("PLAYER_DEAD")
+f:RegisterEvent("PLAYER_ALIVE")
+f:RegisterEvent("PLAYER_UNGHOST")

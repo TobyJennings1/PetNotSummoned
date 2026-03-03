@@ -1,4 +1,3 @@
-local addonName = ...
 local f = CreateFrame("Frame")
 
 -- =========================
@@ -14,11 +13,8 @@ local warned = false
 local dismountTimer = nil
 local rezTimer = nil
 
--- Forward declare
-local WarlockShouldIgnoreNoPet
-
 -- =========================
--- Helpers
+-- Class/spec logic
 -- =========================
 local function IsRelevantSpec()
   local _, class = UnitClass("player")
@@ -41,26 +37,19 @@ local function IsRelevantSpec()
   return false
 end
 
+-- Robust buff check by spellID
 local function PlayerHasAuraBySpellID(spellID)
+  -- Retail preferred
   if AuraUtil and AuraUtil.FindAuraBySpellID then
     return AuraUtil.FindAuraBySpellID(spellID, "player") ~= nil
   end
-
-  for i = 1, 40 do
-    local _, _, _, _, _, _, _, _, _, _, auraSpellID = UnitBuff("player", i)
-    if not auraSpellID then break end
-    if auraSpellID == spellID then
-      return true
-    end
-  end
-
+  
   return false
 end
 
-WarlockShouldIgnoreNoPet = function()
+local function WarlockShouldIgnoreNoPet()
   local _, class = UnitClass("player")
   if class ~= "WARLOCK" then return false end
-  -- Only ignore when Sacrifice BUFF is active
   return PlayerHasAuraBySpellID(GRIMOIRE_OF_SACRIFICE_ID)
 end
 
@@ -75,7 +64,7 @@ iconFrame:EnableMouse(false)
 
 local tex = iconFrame:CreateTexture(nil, "ARTWORK")
 tex:SetAllPoints(true)
-tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall") -- swap if desired
+tex:SetTexture("Interface\\Icons\\Ability_Hunter_BeastCall")
 
 local bg = iconFrame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints(true)
@@ -104,8 +93,8 @@ end
 -- Core Check
 -- =========================
 local function CheckPet()
-  -- 🚫 Always hide while mounted or on taxi
-  if IsMounted() or UnitOnTaxi("player") then
+  -- 🚫 Always hide while mounted (ground/flying/dragonriding)
+  if IsMounted() then
     ShowIcon(false)
     warned = false
     return
@@ -118,6 +107,7 @@ local function CheckPet()
     return
   end
 
+  -- Only care for supported classes/specs
   if not IsRelevantSpec() then
     ShowIcon(false)
     warned = false
@@ -125,7 +115,7 @@ local function CheckPet()
   end
 
   -- 🚫 Warlock: Grimoire of Sacrifice active means no pet is intentional
-  if WarlockShouldIgnoreNoPet and WarlockShouldIgnoreNoPet() then
+  if WarlockShouldIgnoreNoPet() then
     ShowIcon(false)
     warned = false
     return
@@ -134,7 +124,7 @@ local function CheckPet()
   local hasPet = UnitExists("pet")
   ShowIcon(not hasPet)
 
-  -- Avoid raid warning spam while fighting; warn after combat ends instead
+  -- Don’t spam raid warning during combat; warn once combat ends
   if InCombatLockdown() then return end
 
   if not hasPet and not warned then
@@ -146,7 +136,6 @@ local function CheckPet()
 end
 
 local function ScheduleRezCheck()
-  -- Give the game a moment after rez to restore pet state / fire UNIT_PET
   if rezTimer then
     rezTimer:Cancel()
     rezTimer = nil
@@ -169,6 +158,7 @@ f:SetScript("OnEvent", function(_, event, ...)
 
   if event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
     if IsMounted() then
+      -- Mounted: hide immediately and cancel pending dismount check
       if dismountTimer then
         dismountTimer:Cancel()
         dismountTimer = nil
@@ -177,6 +167,7 @@ f:SetScript("OnEvent", function(_, event, ...)
       warned = false
       return
     else
+      -- Dismounted: wait 2 seconds to allow pet to re-appear
       if dismountTimer then
         dismountTimer:Cancel()
       end
@@ -188,7 +179,6 @@ f:SetScript("OnEvent", function(_, event, ...)
   end
 
   if event == "PLAYER_DEAD" then
-    -- Reset state; we'll re-check on ALIVE/UNGHOST
     warned = false
     ShowIcon(false)
     return
@@ -201,7 +191,6 @@ f:SetScript("OnEvent", function(_, event, ...)
     return
   end
 
-  -- Default: just check
   CheckPet()
 end)
 
@@ -211,8 +200,6 @@ f:RegisterEvent("UNIT_PET")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
-
--- Death/rez events (fix for your issue)
 f:RegisterEvent("PLAYER_DEAD")
 f:RegisterEvent("PLAYER_ALIVE")
 f:RegisterEvent("PLAYER_UNGHOST")
